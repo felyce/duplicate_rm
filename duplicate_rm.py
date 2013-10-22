@@ -1,10 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 # -*- coding:utf-8; mode:python-mode -*-
-# Last Change:2009/07/17 02:09:41.
+# Last Change:2009/10/29 23:41:05.
 #
 # GPL v3.
-# 
-# Copyright(c) 2009 Dai Takahashi 
+#
+# Copyright(c) 2009 Dai Takahashi
 # All rights reserved.
 #
 # このスクリプトを使用した結果については一切責任をとりません。
@@ -29,7 +29,7 @@ class Duplicate_RM(object):
     TRASH = "~/.trash"
     HASH_MAX_BUFFER = 1024 * 16
     LOG_FILE = "duplicate_rm.log"
-    
+
     def __init__(self, init_path):
         self.hash = {}
         self.file_list = []
@@ -53,31 +53,34 @@ class Duplicate_RM(object):
 
 
     def _MakeMD5(self, name):
+        try:
             fp = open(name, 'rb')
 
             buf = ""
-            md5 = ""
+            md5 = hashlib.md5()
             while True:
                 buf = fp.read( self.HASH_MAX_BUFFER )
                 if buf:
-                    md5 = hashlib.md5( buf )
+                    md5.update( buf )
                 else:
                     break
+        except Exception, e:
+            print(e)
 
-            return md5.digest()
+        return md5.digest()
 
 
     def _MakeFileList(self):
         """ 引数に複数のディレクトリを指定されていたときの対処 """
         for path in self.dir_list:
             self._Walk(path)
-            
+
 
     def _MakeDigestList(self):
         for f in self.file_list:
             md5hash = self._MakeMD5(f)
             abs_f = os.path.abspath(f)
-            
+
             if md5hash in self.digest_list:
                 self.message += "%s is duplicate.(%s)\n" % (f, self.hash[md5hash])
 
@@ -90,7 +93,7 @@ class Duplicate_RM(object):
                 else:
                     self.del_list.append( abs_f )
                     self.count += 1
-            
+
             else:
                 self.digest_list.append( md5hash )
                 self.hash[md5hash] = os.path.abspath(f)
@@ -115,12 +118,12 @@ class Duplicate_RM(object):
                 os.rename(f, os.path.join(trash, os.path.basename(f)) )
             except Exception, e:
                 print("Renam Error.%s" % e)
-        
-    
+
+
     def _writeLog(self):
         try:
             with open( self.LOG_FILE, 'wa') as f:
-                f.writelines(self.message)        
+                f.writelines(self.message)
 
         except IOError, e:
             print('Log Write Error:%s' % e )
@@ -128,7 +131,7 @@ class Duplicate_RM(object):
 
     def Run(self):
         print("Duplicate_rm start...searching now.")
-        
+
         format = '%a, %y-%m-%d %H:%M:%S %z'
         start = datetime.datetime.now()
         self.message += "---- start %s ----\n\n" % start.strftime(format)
@@ -138,7 +141,7 @@ class Duplicate_RM(object):
         print("Duplicate Count:%d" % self.count)
         print("Deleting...")
         self._DeleteDuplicateFile()
-        print("FINISH!.")
+        print("FINISH!")
 
         end = datetime.datetime.now()
         time = end - start
@@ -151,20 +154,21 @@ class Duplicate_RM(object):
 
 class Duplicate_RM_Sqlite(Duplicate_RM):
     """ using Sqlite3, md5sum(for Linux) """
-#    DATABASE_FILE = ":memory:"
-    DATABASE_FILE = ".duplicate_rm.db"
+#   DATABASE_FILE = ":memory:"
+#   DATABASE_FILE = ".duplicate_rm.db"
     DATABASE_TABLE = "md5hash"
 
-    def __init__(self, path):
+    def __init__(self, path, db_file='.duplicate_rm.db'):
 
         self.process_count = 0
-        
+        self.DATABASE_FILE = db_file
+
         super(Duplicate_RM_Sqlite, self).__init__(path)
 
-        self.OnInit()
+        self.__OnInit()
 
 
-    def OnInit(self):
+    def __OnInit(self):
         super(Duplicate_RM_Sqlite, self).OnInit()
 
         try:
@@ -180,14 +184,13 @@ class Duplicate_RM_Sqlite(Duplicate_RM):
             print('Cannot create Databese Table.')
 
 
-
     def _MakeMD5(self, name):
         result = commands.getoutput("md5sum '%s'" % name)
         md5 = result.split(' ')
 
         return md5[0]
 
-        
+
     def _MakeDigestList(self):
 
         # リスト操作がしやすいように
@@ -195,12 +198,12 @@ class Duplicate_RM_Sqlite(Duplicate_RM):
         _md5_       = 1
 
         self.process_count += 1
-        
+
         cur = self.cn.cursor()
 
         for f in self.file_list:
             abs_f = os.path.abspath(f)
-            
+
             try:
                 # もしも、既にデータベースにフルパスが登録してあったら、
                 # それは過日にチェックしてあることとする。
@@ -210,7 +213,7 @@ class Duplicate_RM_Sqlite(Duplicate_RM):
 
             except Exception, e:
                 print("MakeDigestList(check full_path):%s" % e )
-            
+
             _md5hash = self._MakeMD5(f)
 
 
@@ -226,12 +229,12 @@ class Duplicate_RM_Sqlite(Duplicate_RM):
                     if abs_f == item[ _full_path_ ]:
                         # same file
                         pass
-                    
+
                     elif len(abs_f) < len( item[ _full_path_ ]):
                         self.del_list.append( item[ _full_path_ ] )
                         cur.execute("update md5hash set full_path = ? where md5 = ?", \
                                     (abs_f, _md5hash) )
-                        
+
                     else:
                         self.del_list.append( abs_f )
                         self.count += 1
@@ -246,42 +249,61 @@ class Duplicate_RM_Sqlite(Duplicate_RM):
                 print("_MakeDigestList:%s" % (e))
 
 
-        def Run(self):
+    def Run(self):
             super(Duplicate_RM_Sqlite, self).Run()
             print( "Process Count:%d" % self.process_count )
             self.cn.commit()
-            self.cn.close()            
+            self.cn.close()
 
-        def rmDatabase(self):
+    def rmDatabase(self):
             if os.access( self.DATABASE_FILE, os.F_OK ):
-                os.remove( self.DATABASE_FILE ) 
+                os.remove( self.DATABASE_FILE )
 
 def main():
     import sys
     import optparse
 
     usage =  "usage: %prog [options] arg"
-    parser = optparse.OptionParser()
-    parser.add_option('-f','--force', action="store_true", \
-                    default=False, \
-                    dest='isForce', \
-                    help='Re-make Database.')
+    parser = optparse.OptionParser(usage)
+    parser.add_option('-f','--force',
+                      action  = "store_true",
+                      default = False,
+                      dest    = 'isForce',
+                      help    = 'Re-make Database.(maybe)')
+
+    parser.add_option('-d','--database',
+                      action = "store",
+                      dest   = "database_file",
+                      help   = 'Set database file. ex: -d :memory:')
+
+    parser.add_option('-p','--pure',
+                      action  = "store_true",
+                      default = False,
+                      dest    = 'isPure',
+                      help    = 'Do pure Python? If it is true, not use sqlite.')
 
     (options, args) = parser.parse_args()
-    
+
+    if len(sys.argv) == 1:
+        print("\n%s 引数が足りません。%s\n" % ('*'*5, '*'*5))
+        parser.print_help()
+        sys.exit(1)
+
     if options.isForce:
         if os.access( '.duplicate_rm.db', os.F_OK ):
             os.remove( '.duplicate_rm.db' )
 
     if 'linux' in sys.platform:
-        dr = Duplicate_RM_Sqlite( args )
-
+        if options.isPure:
+            dr = Duplicate_RM( args )
+        else:
+            dr = Duplicate_RM_Sqlite( args, options.database_file )
     else:
         dr = Duplicate_RM( args )
 
     dr.Run()
 
-        
+
 if __name__ == '__main__':
     main()
 
